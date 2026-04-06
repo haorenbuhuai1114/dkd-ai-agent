@@ -1,0 +1,36 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: dkd-ai-agent
+
+  data:
+    redis:
+      host: 192.168.100.128
+      port: 6379
+      password: 123321
+      timeout: 10s
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+
+  ai:
+    zhipuai:
+      api-key: bf86baf515c64418ba0738dcac6bbf9e.ny3Vh7k5Nj78iz3t
+      base-url: https://open.bigmodel.cn/api/paas
+      chat:
+        options:
+          model: glm-4-flash
+          temperature: 0.3
+          max-tokens: 2000
+
+dkd:
+  base-url: http://127.0.0.1:8080
+  token: Bearer eyJhbGciOiJIUzUxMiJ9.eyJsb2dpbl91c2VyX2tleSI6Ijc0YmY2ZGVmLWQyYjgtNDRlYi1iM2EzLTA0NTA0MjRiZTY2NCJ9.m9exUaIevP5q-DOU1WCgywAgkijyTXX76ryMGGRoSRJI7Qd7iyCl3IpbvKfa2Bo0BFqQFqvYOEmsAoNiwAw84g
+
+logging:
+  level:
+    com.dkd.ai: debug
