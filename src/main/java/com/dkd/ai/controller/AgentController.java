@@ -1,6 +1,7 @@
 package com.dkd.ai.controller;
 
 import com.dkd.ai.common.Result;
+import com.dkd.ai.common.TokenContext;
 import com.dkd.ai.service.AgentService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,8 +41,13 @@ public class AgentController {
      * @return AI 的最终回答（自然语言）
      */
     @PostMapping("/chat")
-    public Result<String> chat(@RequestBody UserChatRequest req) {
+    public Result<String> chat(@RequestBody UserChatRequest req,
+                               @RequestHeader(value = "Authorization", required = false) String authToken) {
         try {
+            // token 透传：前端带的帝可得登录 token 存 ThreadLocal，DkdClient 调帝可得接口时取出
+            if (authToken != null && !authToken.isEmpty()) {
+                TokenContext.setToken(authToken);
+            }
             // sessionId 不传时，自动生成一个（兼容老接口调用）
             String sessionId = req.getSessionId();
             if (sessionId == null || sessionId.isEmpty()) {
@@ -52,6 +58,9 @@ public class AgentController {
         } catch (Exception e) {
             log.error("AI 对话失败", e);
             return Result.error("AI 对话失败: " + e.getMessage());
+        } finally {
+            // 必须清理：Tomcat 线程池复用线程，不清会串到下一个请求的用户
+            TokenContext.clear();
         }
     }
 

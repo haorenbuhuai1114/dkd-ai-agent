@@ -19,7 +19,7 @@ spring:
 
   ai:
     zhipuai:
-      api-key: bf86baf515c64418ba0738dcac6bbf9e.ny3Vh7k5Nj78iz3t
+      api-key: ${ZHIPU_API_KEY:}
       base-url: https://open.bigmodel.cn/api/paas
       chat:
         options:
@@ -29,7 +29,7 @@ spring:
 
 dkd:
   base-url: http://127.0.0.1:8080
-  token: Bearer eyJhbGciOiJIUzUxMiJ9.eyJsb2dpbl91c2VyX2tleSI6Ijc0YmY2ZGVmLWQyYjgtNDRlYi1iM2EzLTA0NTA0MjRiZTY2NCJ9.m9exUaIevP5q-DOU1WCgywAgkijyTXX76ryMGGRoSRJI7Qd7iyCl3IpbvKfa2Bo0BFqQFqvYOEmsAoNiwAw84g
+  token: ${DKD_TOKEN:}
 
 logging:
   level:

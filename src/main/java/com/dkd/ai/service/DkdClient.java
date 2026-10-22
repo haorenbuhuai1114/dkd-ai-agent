@@ -3,6 +3,7 @@ package com.dkd.ai.service;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.dkd.ai.common.TokenContext;
 import com.dkd.ai.service.dto.EmpDTO;
 import com.dkd.ai.service.dto.TaskResultDTO;
 import com.dkd.ai.service.dto.TaskStatusDTO;
@@ -26,8 +27,8 @@ import java.util.Map;
  * 2. listEmployeesByRegion()       查询区域员工
  * 3. createTask()                  创建工单（维修/补货/运营）
  *
- * MVP 阶段 token 写死在 application.yml
- * 后期优化：从前端请求头透传 token，存 ThreadLocal，这里从 ThreadLocal 取
+ * token 来源：优先当前请求透传（TokenContext，谁聊天就是谁）；
+ * 无请求上下文时回退 application.yml 的 dkd.token（备用）
  */
 @Slf4j
 @Component
@@ -47,8 +48,26 @@ public class DkdClient {
     private HttpHeaders headers() {
         HttpHeaders h = new HttpHeaders();
         h.setContentType(MediaType.APPLICATION_JSON);
-        h.set("Authorization", token);
+        // token 透传：优先用当前请求线程里用户自己的帝可得 token；
+        // 取不到（无登录态调用、健康检查等）回退 yml 配置的固定 token
+        String effectiveToken = TokenContext.getToken() != null ? TokenContext.getToken() : token;
+        h.set("Authorization", effectiveToken);
         return h;
+    }
+
+    /** 认证失败提示语（401 时抛给上层，禁止被吞成空结果） */
+    private static final String AUTH_ERROR_MSG = "帝可得系统认证失败（登录已过期），请重新登录帝可得前端后重试";
+
+    /**
+     * 检查帝可得返回体的 code：401 说明 token 过期/无效，直接抛 IllegalStateException。
+     * 防止"接口失败被当作空列表"，导致 AI 误报（例如把 401 说成"没有异常设备"）
+     */
+    private void checkAuth(JSONObject body) {
+        Integer code = body != null ? body.getInteger("code") : null;
+        if (code != null && code == 401) {
+            log.error("帝可得接口返回 401，token 已过期或无效");
+            throw new IllegalStateException(AUTH_ERROR_MSG);
+        }
     }
 
     /**
@@ -70,6 +89,7 @@ public class DkdClient {
             ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.GET, req, String.class);
             log.debug("查询异常设备接口原始返回: {}", resp.getBody());
             JSONObject body = JSON.parseObject(resp.getBody());
+            checkAuth(body);
             JSONArray rows = body.getJSONArray("data");  // AjaxResult 的数据在 data 字段
             List<VendingMachineDTO> list = new ArrayList<>();
             if (rows == null) return list;
@@ -80,7 +100,7 @@ public class DkdClient {
                 VendingMachineDTO vm = new VendingMachineDTO();
                 vm.setId(r.getLong("id"));
                 vm.setInnerCode(r.getString("innerCode"));
-                vm.setRunningStatus(r.getString("runningStatus"));
+                vm.setRunningStatus(parseRunningStatus(r.getString("runningStatus")));
                 vm.setRegionId(r.getLong("regionId"));
                 vm.setVmStatus(r.getInteger("vmStatus"));
                 vm.setLastSupplyTime(r.getString("lastSupplyTime"));
@@ -94,6 +114,7 @@ public class DkdClient {
             log.debug("查询到异常设备数量: {}", list.size());
             return list;
         } catch (Exception e) {
+            if (e instanceof IllegalStateException) throw (IllegalStateException) e;  // 认证失败不上报为空结果
             log.error("查询异常设备失败", e);
             return new ArrayList<>();
         }
@@ -110,6 +131,7 @@ public class DkdClient {
         try {
             ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.GET, req, String.class);
             JSONObject body = JSON.parseObject(resp.getBody());
+            checkAuth(body);
             JSONArray rows = body.getJSONArray("rows");
             if (rows == null) return map;
             for (int i = 0; i < rows.size(); i++) {
@@ -117,6 +139,7 @@ public class DkdClient {
                 map.put(r.getLong("id"), r.getString("name"));
             }
         } catch (Exception e) {
+            if (e instanceof IllegalStateException) throw (IllegalStateException) e;  // 认证失败不上报为空结果
             log.warn("查询设备类型字典失败，vmTypeName 将为空", e);
         }
         return map;
@@ -134,6 +157,7 @@ public class DkdClient {
             ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.GET, req, String.class);
             log.debug("区域 {} 员工接口原始返回: {}", regionId, resp.getBody());
             JSONObject body = JSON.parseObject(resp.getBody());
+            checkAuth(body);
             JSONArray rows = body.getJSONArray("rows");
             List<EmpDTO> list = new ArrayList<>();
             if (rows == null) return list;
@@ -151,6 +175,7 @@ public class DkdClient {
             log.debug("区域 {} 查询到员工数量: {}", regionId, list.size());
             return list;
         } catch (Exception e) {
+            if (e instanceof IllegalStateException) throw (IllegalStateException) e;  // 认证失败不上报为空结果
             log.error("查询区域员工失败, regionId={}", regionId, e);
             return new ArrayList<>();
         }
@@ -170,6 +195,7 @@ public class DkdClient {
             ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.GET, req, String.class);
             log.debug("设备 {} 维修员接口原始返回: {}", innerCode, resp.getBody());
             JSONObject body = JSON.parseObject(resp.getBody());
+            checkAuth(body);
             // 专用接口返回 AjaxResult，数组在 data 里，不是 rows
             JSONArray data = body.getJSONArray("data");
             List<EmpDTO> list = new ArrayList<>();
@@ -188,16 +214,17 @@ public class DkdClient {
             log.debug("设备 {} 查询到维修员数量: {}", innerCode, list.size());
             return list;
         } catch (Exception e) {
+            if (e instanceof IllegalStateException) throw (IllegalStateException) e;  // 认证失败不上报为空结果
             log.error("查询设备维修员失败, innerCode={}", innerCode, e);
             return new ArrayList<>();
         }
     }
 
     /**
-     * 根据设备编号查询该区域的运营员（专用接口）
+     * 根据设备编号查询该区域的运营人员（专用接口）
      *
      * 调帝可得接口：GET /manage/emp/businessList/{innerCode}
-     * 后端自动：按设备查区域 → 过滤 roleCode=1002(运营员) + status=1(启用)
+     * 后端自动：按设备查区域 → 过滤 roleCode=1002(运营人员) + status=1(启用)
      * 返回结构是 AjaxResult { code, msg, data: [...] }，data 存数组
      */
     public List<EmpDTO> listBusinessesByInnerCode(String innerCode) {
@@ -205,8 +232,9 @@ public class DkdClient {
         HttpEntity<Void> req = new HttpEntity<>(headers());
         try {
             ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.GET, req, String.class);
-            log.debug("设备 {} 运营员接口原始返回: {}", innerCode, resp.getBody());
+            log.debug("设备 {} 运营人员接口原始返回: {}", innerCode, resp.getBody());
             JSONObject body = JSON.parseObject(resp.getBody());
+            checkAuth(body);
             // 专用接口返回 AjaxResult，数组在 data 里，不是 rows
             JSONArray data = body.getJSONArray("data");
             List<EmpDTO> list = new ArrayList<>();
@@ -222,10 +250,11 @@ public class DkdClient {
                 e.setRoleCode(r.getString("roleCode"));
                 list.add(e);
             }
-            log.debug("设备 {} 查询到运营员数量: {}", innerCode, list.size());
+            log.debug("设备 {} 查询到运营人员数量: {}", innerCode, list.size());
             return list;
         } catch (Exception e) {
-            log.error("查询设备运营员失败, innerCode={}", innerCode, e);
+            if (e instanceof IllegalStateException) throw (IllegalStateException) e;  // 认证失败不上报为空结果
+            log.error("查询设备运营人员失败, innerCode={}", innerCode, e);
             return new ArrayList<>();
         }
     }
@@ -281,6 +310,7 @@ public class DkdClient {
         try {
             ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.GET, req, String.class);
             JSONObject body = JSON.parseObject(resp.getBody());
+            checkAuth(body);
             JSONArray data = body.getJSONArray("data");
             if (data == null || data.isEmpty()) return result;
             for (int i = 0; i < data.size(); i++) {
@@ -300,6 +330,7 @@ public class DkdClient {
             }
             log.debug("设备 {} 从全量货道构造补货 details 数量: {}", innerCode, result.size());
         } catch (Exception e) {
+            if (e instanceof IllegalStateException) throw (IllegalStateException) e;  // 认证失败不上报为空结果
             log.warn("构造补货 details 失败, innerCode={}", innerCode, e);
         }
         return result;
@@ -325,6 +356,7 @@ public class DkdClient {
             ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.GET, req, String.class);
             log.debug("设备 {} 货道接口原始返回: {}", innerCode, resp.getBody());
             JSONObject body = JSON.parseObject(resp.getBody());
+            checkAuth(body);
             JSONArray data = body.getJSONArray("data");
             if (data == null || data.isEmpty()) return result;
             for (int i = 0; i < data.size(); i++) {
@@ -353,6 +385,7 @@ public class DkdClient {
             }
             log.debug("设备 {} 组装补货 details 数量: {}", innerCode, result.size());
         } catch (Exception e) {
+            if (e instanceof IllegalStateException) throw (IllegalStateException) e;  // 认证失败不上报为空结果
             log.error("查询设备货道配置失败, innerCode={}", innerCode, e);
         }
         return result;
@@ -372,6 +405,7 @@ public class DkdClient {
             ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.GET, req, String.class);
             log.debug("设备 {} 货道明细接口原始返回: {}", innerCode, resp.getBody());
             JSONObject body = JSON.parseObject(resp.getBody());
+            checkAuth(body);
             JSONArray data = body.getJSONArray("data");
             if (data == null || data.isEmpty()) {
                 return "设备 " + innerCode + " 未配置任何货道";
@@ -399,6 +433,7 @@ public class DkdClient {
             }
             return sb.toString();
         } catch (Exception e) {
+            if (e instanceof IllegalStateException) throw (IllegalStateException) e;  // 认证失败不上报为空结果
             log.error("查询设备货道明细失败, innerCode={}", innerCode, e);
             return "查询设备 " + innerCode + " 货道明细失败：" + e.getMessage();
         }
@@ -438,6 +473,7 @@ public class DkdClient {
             ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.POST, req, String.class);
             log.debug("创建工单接口返回: {}", resp.getBody());
             JSONObject r = JSON.parseObject(resp.getBody());
+            checkAuth(r);
             TaskResultDTO dto = new TaskResultDTO();
             // 兼容帝可得多种返回结构
             if (r.getInteger("code") != null && r.getInteger("code") == 200) {
@@ -478,6 +514,7 @@ public class DkdClient {
             ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.GET, req, String.class);
             log.debug("查询工单状态接口原始返回: {}", resp.getBody());
             JSONObject body = JSON.parseObject(resp.getBody());
+            checkAuth(body);
             JSONArray rows = body.getJSONArray("rows");
             if (rows == null || rows.isEmpty()) {
                 log.debug("工单 {} 不存在或已被删除", taskCode);
@@ -501,6 +538,7 @@ public class DkdClient {
             log.debug("工单 {} 当前状态: {}", taskCode, dto.getTaskStatusName());
             return dto;
         } catch (Exception e) {
+            if (e instanceof IllegalStateException) throw (IllegalStateException) e;  // 认证失败不上报为空结果
             log.error("查询工单状态失败, taskCode={}", taskCode, e);
             return null;
         }
@@ -541,13 +579,12 @@ public class DkdClient {
      */
     public VendingMachineDTO getVendingMachineById(Long id) {
         String url = baseUrl + "/manage/vm/" + id;
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("Authorization", token);
-        HttpEntity<Void> req = new HttpEntity<>(headers);
+        HttpEntity<Void> req = new HttpEntity<>(headers());
         try {
             ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.GET, req, String.class);
             log.debug("设备ID {} 详情接口原始返回: {}", id, resp.getBody());
             JSONObject body = JSON.parseObject(resp.getBody());
+            checkAuth(body);
             if (body.getInteger("code") != 200) {
                 log.warn("查询设备ID {} 失败: {}", id, body.getString("msg"));
                 return null;
@@ -559,12 +596,13 @@ public class DkdClient {
             dto.setInnerCode(data.getString("innerCode"));
             dto.setRegionId(data.getLong("regionId"));
             dto.setAddr(data.getString("addr"));
-            dto.setVmTypeName(mapVmType(data.getLong("vmTypeId")));
+            dto.setVmTypeName(listVmTypeMap().getOrDefault(data.getLong("vmTypeId"), "未知"));
             dto.setVmStatus(data.getInteger("vmStatus"));
-            dto.setRunningStatus(data.getString("runningStatus"));
+            dto.setRunningStatus(parseRunningStatus(data.getString("runningStatus")));
             dto.setUpdateTime(data.getString("updateTime"));
             return dto;
         } catch (Exception e) {
+            if (e instanceof IllegalStateException) throw (IllegalStateException) e;  // 认证失败不上报为空结果
             log.error("查询设备ID {} 异常: {}", id, e.getMessage());
             return null;
         }
@@ -577,13 +615,12 @@ public class DkdClient {
      */
     public VendingMachineDTO getVendingMachineByInnerCode(String innerCode) {
         String url = baseUrl + "/manage/vm/list?innerCode=" + innerCode;
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("Authorization", token);
-        HttpEntity<Void> req = new HttpEntity<>(headers);
+        HttpEntity<Void> req = new HttpEntity<>(headers());
         try {
             ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.GET, req, String.class);
             log.debug("设备编号 {} 列表接口原始返回: {}", innerCode, resp.getBody());
             JSONObject body = JSON.parseObject(resp.getBody());
+            checkAuth(body);
             if (body.getInteger("code") != 200) {
                 log.warn("查询设备编号 {} 失败: {}", innerCode, body.getString("msg"));
                 return null;
@@ -596,12 +633,13 @@ public class DkdClient {
             dto.setInnerCode(data.getString("innerCode"));
             dto.setRegionId(data.getLong("regionId"));
             dto.setAddr(data.getString("addr"));
-            dto.setVmTypeName(mapVmType(data.getLong("vmTypeId")));
+            dto.setVmTypeName(listVmTypeMap().getOrDefault(data.getLong("vmTypeId"), "未知"));
             dto.setVmStatus(data.getInteger("vmStatus"));
-            dto.setRunningStatus(data.getString("runningStatus"));
+            dto.setRunningStatus(parseRunningStatus(data.getString("runningStatus")));
             dto.setUpdateTime(data.getString("updateTime"));
             return dto;
         } catch (Exception e) {
+            if (e instanceof IllegalStateException) throw (IllegalStateException) e;  // 认证失败不上报为空结果
             log.error("查询设备编号 {} 异常: {}", innerCode, e.getMessage());
             return null;
         }
@@ -613,6 +651,28 @@ public class DkdClient {
             case 1: return "饮料机";
             case 2: return "综合机";
             default: return "未知(" + vmTypeId + ")";
+        }
+    }
+
+    /**
+     * 解析设备运行状态 JSON，返回人类可读文本
+     * runningStatus 格式：{"statusCode":"1001","status":0}
+     * status: 1=正常, 0=异常, 2=维护中
+     */
+    private String parseRunningStatus(String json) {
+        if (json == null || json.isEmpty()) return "未知";
+        try {
+            JSONObject obj = JSON.parseObject(json);
+            Integer status = obj.getInteger("status");
+            if (status == null) return json;
+            switch (status) {
+                case 1: return "正常";
+                case 0: return "异常";
+                case 2: return "维护中";
+                default: return "状态未知(" + status + ")";
+            }
+        } catch (Exception e) {
+            return json;
         }
     }
 }

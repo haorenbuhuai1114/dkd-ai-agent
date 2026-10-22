@@ -1,5 +1,6 @@
 package com.dkd.ai.tool;
 
+import com.dkd.ai.common.ToolCallContext;
 import com.dkd.ai.service.DkdClient;
 import com.dkd.ai.service.dto.EmpDTO;
 import com.dkd.ai.service.dto.TaskResultDTO;
@@ -46,14 +47,15 @@ public class DkdTools {
     private FunctionCallback getVendingMachineByIdCallback() {
         return FunctionCallbackWrapper.builder((Object input) -> {
                     IdInput req = objectMapper.convertValue(input, IdInput.class);
+                    ToolCallContext.markCalled("getVendingMachineById");
                     log.debug("工具函数：查询设备ID={}详情", req.getId());
                     VendingMachineDTO vm = dkdClient.getVendingMachineById(req.getId());
                     if (vm == null) {
                         return "未找到设备ID=" + req.getId() + "的设备，请确认设备ID是否正确，或调用 listAbnormalVendingMachines 查询异常设备列表";
                     }
-                    return String.format("设备ID:%s, 设备编号:%s, 所属区域ID:%s, 设备地址:%s, 设备类型:%s, 设备状态:%s(1-运营中,0-未投放,3-撤机), 运行状态:%s, 上次修改时间:%s",
+                    return String.format("设备ID:%s, 设备编号:%s, 所属区域ID:%s, 设备地址:%s, 设备类型:%s, 设备状态:%s(1-运营中,0-未投放,3-撤机), 运行状态:%s, 上次修改时间:%s。【重要：后续创建工单/查货道必须使用此设备编号 %s，不要用历史记忆中的编号】【如需补货，请调用 listChannelDetails(%s) 查看货道库存，补货与运行状态无关】",
                             vm.getId(), vm.getInnerCode(), vm.getRegionId(), vm.getAddr(),
-                            vm.getVmTypeName(), vm.getVmStatus(), vm.getRunningStatus(), vm.getUpdateTime());
+                            vm.getVmTypeName(), vm.getVmStatus(), vm.getRunningStatus(), vm.getUpdateTime(), vm.getInnerCode(), vm.getInnerCode());
                 })
                 .withDescription("根据设备ID（数字型，如86）查询单台设备详情。参数：id（设备ID，如86）。返回：设备ID、设备编号、所属区域ID、设备地址、设备类型、设备状态、运行状态。当用户说XX号机时优先调用此工具，不要先调 listAbnormalVendingMachines。")
                 .withInputType(IdInput.class)
@@ -65,14 +67,15 @@ public class DkdTools {
     private FunctionCallback getVendingMachineByInnerCodeCallback() {
         return FunctionCallbackWrapper.builder((Object input) -> {
                     InnerCodeInput req = objectMapper.convertValue(input, InnerCodeInput.class);
+                    ToolCallContext.markCalled("getVendingMachineByInnerCode");
                     log.debug("工具函数：查询设备编号={}详情", req.getInnerCode());
                     VendingMachineDTO vm = dkdClient.getVendingMachineByInnerCode(req.getInnerCode());
                     if (vm == null) {
                         return "未找到设备编号=" + req.getInnerCode() + "的设备，请确认设备编号是否正确，或调用 listAbnormalVendingMachines 查询异常设备列表";
                     }
-                    return String.format("设备ID:%s, 设备编号:%s, 所属区域ID:%s, 设备地址:%s, 设备类型:%s, 设备状态:%s(1-运营中,0-未投放,3-撤机), 运行状态:%s, 上次修改时间:%s",
+                    return String.format("设备ID:%s, 设备编号:%s, 所属区域ID:%s, 设备地址:%s, 设备类型:%s, 设备状态:%s(1-运营中,0-未投放,3-撤机), 运行状态:%s, 上次修改时间:%s。【重要：后续创建工单/查货道必须使用此设备编号 %s，不要用历史记忆中的编号】【如需补货，请调用 listChannelDetails(%s) 查看货道库存，补货与运行状态无关】",
                             vm.getId(), vm.getInnerCode(), vm.getRegionId(), vm.getAddr(),
-                            vm.getVmTypeName(), vm.getVmStatus(), vm.getRunningStatus(), vm.getUpdateTime());
+                            vm.getVmTypeName(), vm.getVmStatus(), vm.getRunningStatus(), vm.getUpdateTime(), vm.getInnerCode(), vm.getInnerCode());
                 })
                 .withDescription("根据设备编号（如aim5xu4I）查询单台设备详情。参数：innerCode（设备编号）。返回：设备ID、设备编号、所属区域ID、设备地址、设备类型、设备状态、运行状态。当用户给出设备编号时优先调用此工具，不要先调 listAbnormalVendingMachines。")
                 .withInputType(InnerCodeInput.class)
@@ -82,13 +85,14 @@ public class DkdTools {
 
     private FunctionCallback listAbnormalVendingMachinesCallback() {
         return FunctionCallbackWrapper.builder((Object input) -> {
+                    ToolCallContext.markCalled("listAbnormalVendingMachines");
                     log.debug("工具函数：查询异常设备");
                     List<VendingMachineDTO> list = dkdClient.listAbnormalVendingMachines();
                     StringBuilder sb = new StringBuilder();
                     for (VendingMachineDTO vm : list) {
-                        sb.append(String.format("设备ID:%s, 设备编号:%s, 所属区域ID:%s, 设备地址:%s, 设备类型:%s, 设备状态:%s(1-运营中,0-未投放,3-撤机), 运行状态:%s, 上次修改时间:%s; ",
+                        sb.append(String.format("设备ID:%s, 设备编号:%s, 所属区域ID:%s, 设备地址:%s, 设备类型:%s, 设备状态:%s(1-运营中,0-未投放,3-撤机), 运行状态:%s, 上次修改时间:%s【后续操作必须用此设备编号 %s】; ",
                                 vm.getId(), vm.getInnerCode(), vm.getRegionId(), vm.getAddr(),
-                                vm.getVmTypeName(), vm.getVmStatus(), vm.getRunningStatus(), vm.getUpdateTime()));
+                                vm.getVmTypeName(), vm.getVmStatus(), vm.getRunningStatus(), vm.getUpdateTime(), vm.getInnerCode()));
                     }
                     if (sb.length() == 0) {
                         return "没有异常设备";
@@ -104,6 +108,7 @@ public class DkdTools {
     private FunctionCallback listChannelDetailsCallback() {
         return FunctionCallbackWrapper.builder((Object input) -> {
                     InnerCodeInput req = objectMapper.convertValue(input, InnerCodeInput.class);
+                    ToolCallContext.markCalled("listChannelDetails");
                     log.debug("工具函数：查询设备 {} 货道缺货明细", req.getInnerCode());
                     String details = dkdClient.formatChannelDetails(req.getInnerCode());
                     return details;
@@ -117,6 +122,7 @@ public class DkdTools {
     private FunctionCallback listEmployeesByRegionCallback() {
         return FunctionCallbackWrapper.builder((Object input) -> {
                     RegionIdInput req = objectMapper.convertValue(input, RegionIdInput.class);
+                    ToolCallContext.markCalled("listEmployeesByRegion");
                     log.debug("工具函数：查询区域 {} 员工", req.getRegionId());
                     List<EmpDTO> list = dkdClient.listEmployeesByRegion(req.getRegionId());
                     StringBuilder sb = new StringBuilder();
@@ -131,7 +137,7 @@ public class DkdTools {
                     return sb.toString();
                 })
                 .withName("listEmployeesByRegion")
-                .withDescription("通用查询：查询指定区域的所有员工（不限制角色）。参数 regionId 必须从设备列表中获取。返回字段包含：userId(员工ID)、userName(姓名)、regionId(所属区域)、roleCode(角色编码)、roleName(角色名)。roleCode参考：1002-运营员 1003-维修员。")
+                .withDescription("通用查询：查询指定区域的所有员工（不限制角色）。参数 regionId 必须从设备列表中获取。返回字段包含：userId(员工ID)、userName(姓名)、regionId(所属区域)、roleCode(角色编码)、roleName(角色名)。roleCode参考：1002-运营人员(负责补货) 1003-维修员(负责投放/维修/撤机)。")
                 .withInputType(RegionIdInput.class)
                 .build();
     }
@@ -139,6 +145,7 @@ public class DkdTools {
     private FunctionCallback listRepairersByInnerCodeCallback() {
         return FunctionCallbackWrapper.builder((Object input) -> {
                     InnerCodeInput req = objectMapper.convertValue(input, InnerCodeInput.class);
+                    ToolCallContext.markCalled("listRepairersByInnerCode");
                     log.debug("工具函数：根据设备编号 {} 查询维修员", req.getInnerCode());
                     List<EmpDTO> list = dkdClient.listRepairersByInnerCode(req.getInnerCode());
                     StringBuilder sb = new StringBuilder();
@@ -153,7 +160,7 @@ public class DkdTools {
                     return sb.toString();
                 })
                 .withName("listRepairersByInnerCode")
-                .withDescription("专用查询：根据设备编号查询该设备所在区域的维修员列表。参数 innerCode 是设备编号(如VM003)。返回已启用(status=1)且角色为维修员(roleCode=1003)的员工。创建维修工单前必须先调用此工具。")
+                .withDescription("专用查询：根据设备编号查询该设备所在区域的维修员列表。参数 innerCode 是设备编号(如VM003)。返回已启用(status=1)且角色为维修员(roleCode=1003)的员工。创建维修/投放/撤机工单前必须先调用此工具。")
                 .withInputType(InnerCodeInput.class)
                 .build();
     }
@@ -161,7 +168,8 @@ public class DkdTools {
     private FunctionCallback listBusinessesByInnerCodeCallback() {
         return FunctionCallbackWrapper.builder((Object input) -> {
                     InnerCodeInput req = objectMapper.convertValue(input, InnerCodeInput.class);
-                    log.debug("工具函数：根据设备编号 {} 查询运营员", req.getInnerCode());
+                    ToolCallContext.markCalled("listBusinessesByInnerCode");
+                    log.debug("工具函数：根据设备编号 {} 查询运营人员", req.getInnerCode());
                     List<EmpDTO> list = dkdClient.listBusinessesByInnerCode(req.getInnerCode());
                     StringBuilder sb = new StringBuilder();
                     for (EmpDTO e : list) {
@@ -170,12 +178,12 @@ public class DkdTools {
                                 e.getRoleCode(), e.getRoleName()));
                     }
                     if (sb.length() == 0) {
-                        return "该设备所在区域没有可用运营员（roleCode=1002）";
+                        return "该设备所在区域没有可用运营人员（roleCode=1002）";
                     }
                     return sb.toString();
                 })
                 .withName("listBusinessesByInnerCode")
-                .withDescription("专用查询：根据设备编号查询该设备所在区域的运营员列表。参数 innerCode 是设备编号(如VM003)。返回已启用(status=1)且角色为运营员(roleCode=1002)的员工。创建投放/撤机工单前必须先调用此工具。")
+                .withDescription("专用查询：根据设备编号查询该设备所在区域的运营人员列表。参数 innerCode 是设备编号(如VM003)。返回已启用(status=1)且角色为运营人员(roleCode=1002)的员工。创建补货工单前必须先调用此工具。")
                 .withInputType(InnerCodeInput.class)
                 .build();
     }
@@ -183,6 +191,7 @@ public class DkdTools {
     private FunctionCallback createRepairTaskCallback() {
         return FunctionCallbackWrapper.builder((Object input) -> {
                     RepairTaskInput req = objectMapper.convertValue(input, RepairTaskInput.class);
+                    ToolCallContext.markCalled("createRepairTask");
                     log.debug("工具函数：创建维修工单 innerCode={}, userId={}, desc={}",
                             req.getInnerCode(), req.getUserId(), req.getDesc());
                     TaskResultDTO result = dkdClient.createRepairTask(
@@ -198,6 +207,7 @@ public class DkdTools {
     private FunctionCallback createSupplyTaskCallback() {
         return FunctionCallbackWrapper.builder((Object input) -> {
                     SupplyTaskInput req = objectMapper.convertValue(input, SupplyTaskInput.class);
+                    ToolCallContext.markCalled("createSupplyTask");
                     log.debug("工具函数：创建补货工单 innerCode={}, userId={}, desc={}",
                             req.getInnerCode(), req.getUserId(), req.getDesc());
                     TaskResultDTO result = dkdClient.createSupplyTask(
@@ -205,7 +215,7 @@ public class DkdTools {
                     return String.format("工单创建结果：%s，工单编号：%s", result.getMsg(), result.getTaskCode());
                 })
                 .withName("createSupplyTask")
-                .withDescription("为指定售货机创建补货工单。触发条件：用户明确要求补货，或设备 lastSupplyTime 超过7天，或 runningStatus 含缺货。参数要求：innerCode 是设备编号，userId 必须先调用 listRepairersByInnerCode 工具查询同区域维修员后取返回的 userId（补货用维修员），desc 是补货描述（如：3号机缺货需补货）。")
+                .withDescription("为指定售货机创建补货工单。触发条件：用户明确要求补货，或设备 lastSupplyTime 超过7天，或 runningStatus 含缺货。参数要求：innerCode 是设备编号，userId 必须先调用 listBusinessesByInnerCode 工具查询同区域运营人员后取返回的 userId（补货用运营人员 roleCode=1002），desc 是补货描述（如：3号机缺货需补货）。")
                 .withInputType(SupplyTaskInput.class)
                 .build();
     }
@@ -213,6 +223,7 @@ public class DkdTools {
     private FunctionCallback createOperateTaskCallback() {
         return FunctionCallbackWrapper.builder((Object input) -> {
                     OperateTaskInput req = objectMapper.convertValue(input, OperateTaskInput.class);
+                    ToolCallContext.markCalled("createOperateTask");
                     log.debug("工具函数：创建运营工单 innerCode={}, userId={}, productType={}",
                             req.getInnerCode(), req.getUserId(), req.getProductType());
                     // DkdContants: 1=投放 4=撤机
@@ -222,7 +233,7 @@ public class DkdTools {
                     return String.format("工单创建结果：%s，工单编号：%s", result.getMsg(), result.getTaskCode());
                 })
                 .withName("createOperateTask")
-                .withDescription("为指定售货机创建运营工单(投放或撤机)。触发条件：用户明确要求投放/撤机。参数要求：innerCode 是设备编号，userId 必须先调用 listBusinessesByInnerCode 工具查询后取返回的运营员 userId，productType 1=投放 2=撤机。")
+                .withDescription("为指定售货机创建运营工单(投放或撤机)。触发条件：用户明确要求投放/撤机。参数要求：innerCode 是设备编号，userId 必须先调用 listRepairersByInnerCode 工具查询后取返回的维修员 userId（roleCode=1003），productType 1=投放 2=撤机。")
                 .withInputType(OperateTaskInput.class)
                 .build();
     }
@@ -230,6 +241,7 @@ public class DkdTools {
     private FunctionCallback queryTaskStatusCallback() {
         return FunctionCallbackWrapper.builder((Object input) -> {
                     TaskCodeInput req = objectMapper.convertValue(input, TaskCodeInput.class);
+                    ToolCallContext.markCalled("queryTaskStatus");
                     log.debug("工具函数：查询工单状态 taskCode={}", req.getTaskCode());
                     TaskStatusDTO task = dkdClient.queryTaskStatusByCode(req.getTaskCode());
                     if (task == null) {

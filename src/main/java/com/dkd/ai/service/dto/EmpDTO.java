@@ -16,8 +16,8 @@ public class EmpDTO {
     private String userName;
     /** 所属区域ID，用来和设备的 regionId 匹配 */
     private Long regionId;
-    /** 角色：运维员/运营员/补货员/维修工 */
+    /** 角色：运营人员（补货）/ 维修员（投放、维修、撤机） */
     private String roleName;
-    /** 角色编码：1001-运营 1002-运维 1003-补货员 1004-维修员 */
+    /** 角色编码：1002-运营人员 1003-维修员 */
     private String roleCode;
 }
